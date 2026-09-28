@@ -1,0 +1,23 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Databases
+*.db
+*.db.bak
+
+# Backups and temporary files
+backups/
+temp_test.pdf
+test_afectacion.pdf
+test_report.pdf
+test_uncompressed.pdf
+scratch_output.txt
+
+# Streamlit config (if you don't want to track secrets or custom local settings)
+.streamlit/
+
+# OS generated files
+.DS_Store
+Thumbs.db
