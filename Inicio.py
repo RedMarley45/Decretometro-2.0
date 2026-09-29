@@ -164,25 +164,41 @@ for s in sacs:
 # 5. Convenios (Certificados de Avance y Solicitudes en trámite)
 solicitudes_conv = get_solicitudes_convenio_pendientes()
 for sc in solicitudes_conv:
-    f_sol = datetime.datetime.strptime(sc['fecha_solicitud'], '%Y-%m-%d').date() if sc.get('fecha_solicitud') else today
-    f_est = datetime.datetime.strptime(sc['fecha_estimada_cobro'], '%Y-%m-%d').date() if sc.get('fecha_estimada_cobro') else (f_sol + datetime.timedelta(days=30))
-    moneda_codigo = sc.get('moneda_codigo') or 'ARS'
-    monto_ars = sc.get('monto_ars_estimado') or 0.0
-    
-    item = {
-        "Tipo": f"Convenio ({moneda_codigo})",
-        "Decreto/Referencia": f"Conv. {sc['convenio_numero']} ({sc['ente_financiador']})",
-        "Exp. IMUH": sc.get('obra_expediente_imuh') or "Sin asignar",
-        "Destino/Concepto": f"Cert. #{sc['nro_certificado']} - {sc['obra_nombre']}",
-        "Periodo": sc.get('periodo') or f_sol.strftime('%m/%Y'),
-        "Nro. Cuota": f"Cert. #{sc['nro_certificado']}",
-        "Importe": monto_ars,
-        "Semana estimada de cobro": utils.format_week_monday(sc['fecha_estimada_cobro']) if sc.get('fecha_estimada_cobro') else "---"
-    }
-    if today > f_est:
-        atrasos.append(item)
-    elif f_est.month == today.month and f_est.year == today.year:
-        pendientes_mes.append(item)
+    try:
+        f_sol = datetime.datetime.strptime(sc['fecha_solicitud'], '%Y-%m-%d').date() if sc.get('fecha_solicitud') else today
+        f_est = datetime.datetime.strptime(sc['fecha_estimada_cobro'], '%Y-%m-%d').date() if sc.get('fecha_estimada_cobro') else (f_sol + datetime.timedelta(days=30))
+        moneda_codigo = sc.get('moneda_codigo') or 'ARS'
+        
+        cant_moneda = float(sc.get('cantidad_moneda') or 0.0)
+        cant_cobrada = float(sc.get('cantidad_moneda_cobrada') or 0.0)
+        saldo_moneda = max(0.0, cant_moneda - cant_cobrada)
+        cotiz = float(sc.get('cotizacion_solicitud') or 1.0)
+        monto_ars = sc.get('monto_ars_estimado') if sc.get('monto_ars_estimado') is not None else ((saldo_moneda * cotiz) if saldo_moneda > 0 else float(sc.get('monto_solicitado_ars') or 0.0))
+        
+        nro_conv = sc.get('nro_convenio') or sc.get('convenio_numero') or 'S/N'
+        ente_fin = sc.get('ente_financiador') or 'Sin ente'
+        exp_imuh = sc.get('expediente_imuh') or sc.get('obra_expediente_imuh') or "Sin asignar"
+        nro_cert = sc.get('nro_certificado', '-')
+        obra_nom = sc.get('obra_nombre', 'Obra')
+        periodo_str = sc.get('periodo') or f_sol.strftime('%m/%Y')
+        sem_cobro = utils.format_week_monday(f_est.strftime('%Y-%m-%d')) if f_est else "---"
+
+        item = {
+            "Tipo": f"Convenio ({moneda_codigo})",
+            "Decreto/Referencia": f"Conv. {nro_conv} ({ente_fin})",
+            "Exp. IMUH": exp_imuh,
+            "Destino/Concepto": f"Cert. #{nro_cert} - {obra_nom}",
+            "Periodo": periodo_str,
+            "Nro. Cuota": f"Cert. #{nro_cert}",
+            "Importe": monto_ars,
+            "Semana estimada de cobro": sem_cobro
+        }
+        if today > f_est:
+            atrasos.append(item)
+        elif f_est.month == today.month and f_est.year == today.year:
+            pendientes_mes.append(item)
+    except Exception:
+        continue
 
 # Mostrar Alertas de Vencimiento
 with st.expander("🚨 Alertas de Vencimiento y Deudas Pendientes", expanded=True):
@@ -416,7 +432,7 @@ if not df_cuotas.empty and not df_decretos.empty:
             })
         st.dataframe(pd.DataFrame(filas_c_dash), use_container_width=True, hide_index=True)
     else:
-        st.info("No hay convenios multiobra registrados aún. Puede crearlos desde la página '5b. Convenios'.")
+        st.info("No hay convenios multiobra registrados aún. Puede crearlos desde la página 'Convenios'.")
 
     # --- SECCIÓN: SALDOS SIN DISTRIBUIR Y RESERVAS ---
     st.markdown("---")
@@ -605,11 +621,15 @@ if not df_cuotas.empty and not df_decretos.empty:
         st.subheader("📜 Convenios Multiobra y Financiamiento Externo")
         
         col_c1, col_c2, col_c3, col_c4 = st.columns(4)
-        total_conv_activos = len([c for c in convenios_list if c['estado'] == 'Activo'])
+        total_conv_activos = len([c for c in convenios_list if c.get('estado') in ('Activo', 'Vigente')])
         
         # Solicitudes pendientes de cobro bancario
         sols_conv_pend = get_solicitudes_convenio_pendientes()
-        tot_sol_pend_ars = sum(sc.get('monto_ars_estimado', 0) for sc in sols_conv_pend)
+        tot_sol_pend_ars = sum(
+            sc.get('monto_ars_estimado') if sc.get('monto_ars_estimado') is not None
+            else (max(0.0, float(sc.get('cantidad_moneda') or 0.0) - float(sc.get('cantidad_moneda_cobrada') or 0.0)) * float(sc.get('cotizacion_solicitud') or 1.0))
+            for sc in sols_conv_pend
+        )
         
         # Cobros de convenios registrados
         cobros_conv = [c for c in cobros if c.get('origen_tipo') == 'convenio']

@@ -122,28 +122,67 @@ with tab2:
                 st.info(f"🏛️ **Convenio:** {s_sel['nro_convenio']} ({s_sel['nombre_convenio']}) — **Obra:** {s_sel['obra_nombre']} (Exp. IMUH {s_sel['expediente_imuh']})\n\n"
                         f"📊 **Solicitado:** {utils.format_moneda_custom(s_sel['cantidad_moneda'], simbolo=s_sel['moneda_simbolo'], codigo=s_sel['moneda_codigo'])} | **Pendiente de Acreditar:** {utils.format_moneda_custom(saldo_moneda_pend, simbolo=s_sel['moneda_simbolo'], codigo=s_sel['moneda_codigo'])} | **Cotización de Emisión:** $ {s_sel['cotizacion_solicitud']:,.2f}")
                 
-                with st.form(f"form_cobro_convenio_{sel_sol_id}"):
+                cotiz_sol = float(s_sel.get('cotizacion_solicitud') or 1.0)
+                key_cant = f"cobro_conv_cant_{sel_sol_id}"
+                key_monto = f"cobro_conv_monto_{sel_sol_id}"
+                
+                # Inicialización reactiva de estado al seleccionar o cambiar solicitud
+                if st.session_state.get("last_sel_sol_cobro") != sel_sol_id:
+                    st.session_state["last_sel_sol_cobro"] = sel_sol_id
+                    st.session_state[key_cant] = float(saldo_moneda_pend)
+                    st.session_state[key_monto] = round(saldo_moneda_pend * cotiz_sol, 2)
+                elif key_cant not in st.session_state:
+                    st.session_state[key_cant] = float(saldo_moneda_pend)
+                    st.session_state[key_monto] = round(saldo_moneda_pend * cotiz_sol, 2)
+
+                def on_cobro_cant_change(s_id, c_sol):
+                    cant_val = float(st.session_state.get(f"cobro_conv_cant_{s_id}") or 0.0)
+                    st.session_state[f"cobro_conv_monto_{s_id}"] = round(cant_val * c_sol, 2)
+                
+                with st.container(border=True):
                     col_cb1, col_cb2 = st.columns(2)
-                    cant_cancelar = col_cb1.number_input(f"Cantidad en {s_sel['moneda_codigo']} a cancelar/amortizar *", min_value=0.01, max_value=saldo_moneda_pend, value=saldo_moneda_pend, step=10.0, help="Cantidad de UVIs o unidades que quedan amortizadas y saldadas con este desembolso bancario.")
+                    cant_cancelar = col_cb1.number_input(
+                        f"Cantidad en {s_sel['moneda_codigo']} a cancelar/amortizar *",
+                        min_value=0.01,
+                        max_value=float(saldo_moneda_pend),
+                        step=10.0,
+                        key=key_cant,
+                        on_change=on_cobro_cant_change,
+                        args=(sel_sol_id, cotiz_sol),
+                        help=f"Cantidad de {s_sel['moneda_codigo']} que quedan amortizadas y saldadas con este desembolso bancario. Tope máximo: {saldo_moneda_pend:,.2f}."
+                    )
                     
-                    monto_ars_sug = cant_cancelar * float(s_sel['cotizacion_solicitud'] or 1.0)
-                    monto_ars_efectivo = col_cb2.number_input("Monto efectivamente acreditado en banco ($ ARS) *", min_value=0.01, value=monto_ars_sug, step=1000.0, help="Importe en pesos neto ingresado en el extracto bancario.")
+                    monto_ars_efectivo = col_cb2.number_input(
+                        "Monto efectivamente acreditado en banco ($ ARS) *",
+                        min_value=0.01,
+                        step=1000.0,
+                        key=key_monto,
+                        help="Calculado automáticamente en tiempo real (Cantidad × Cotización de Solicitud). Puede editarlo manualmente si hay una pequeña diferencia por redondeo o ajuste bancario."
+                    )
                     
                     col_cb3, col_cb4 = st.columns(2)
-                    fecha_cobro_conv = col_cb3.date_input("Fecha del Ingreso Bancario *", value=datetime.date.today(), format="DD-MM-YYYY")
+                    fecha_cobro_conv = col_cb3.date_input("Fecha del Ingreso Bancario *", value=datetime.date.today(), format="DD-MM-YYYY", key=f"cobro_conv_fecha_{sel_sol_id}")
                     comp_file_conv = col_cb4.file_uploader("Adjuntar Comprobante Bancario (PDF opcional)", type=['pdf'], key=f"comp_conv_{sel_sol_id}")
                     
                     # Cálculo de diferencia
-                    cotiz_efectiva = (monto_ars_efectivo / cant_cancelar) if cant_cancelar > 0 else 1.0
-                    dif_cotiz = monto_ars_efectivo - (cant_cancelar * float(s_sel['cotizacion_solicitud']))
+                    monto_teorico = round(cant_cancelar * cotiz_sol, 2)
+                    dif_cotiz = round(monto_ars_efectivo - monto_teorico, 2)
+                    cotiz_efectiva = (monto_ars_efectivo / cant_cancelar) if cant_cancelar > 0 else cotiz_sol
                     
                     if abs(dif_cotiz) > 0.01:
-                        st.caption(f"ℹ️ **Diferencia de liquidación respecto al presupuesto:** {utils.format_currency_ar(dif_cotiz)} (Cotización efectiva resultante: ${cotiz_efectiva:,.2f})")
+                        signo = "+" if dif_cotiz > 0 else ""
+                        st.caption(f"ℹ️ **Cálculo Teórico:** {utils.format_currency_ar(monto_teorico)} | **Diferencia de liquidación / redondeo:** {signo}{utils.format_currency_ar(dif_cotiz)} (Cotización efectiva resultante: ${cotiz_efectiva:,.2f} / {s_sel['moneda_codigo']})")
+                    else:
+                        st.caption(f"✓ Coincide exactamente con el cálculo teórico a ${cotiz_sol:,.2f} / {s_sel['moneda_codigo']}.")
 
-                    btn_conv = st.form_submit_button("Registrar Cobro de Convenio", type="primary")
+                    btn_conv = st.button("Registrar Cobro de Convenio", type="primary", key=f"btn_save_cobro_conv_{sel_sol_id}")
                     if btn_conv:
-                        if fecha_cobro_conv > datetime.date.today():
+                        if cant_cancelar > (saldo_moneda_pend + 0.0001):
+                            st.error(f"Error: La cantidad a cancelar ({cant_cancelar:,.2f}) no puede ser superior a la pendiente de la solicitud ({saldo_moneda_pend:,.2f} {s_sel['moneda_codigo']}).")
+                        elif fecha_cobro_conv > datetime.date.today():
                             st.error("Error: No se pueden registrar cobros con fecha futura.")
+                        elif monto_ars_efectivo <= 0:
+                            st.error("Error: El monto efectivamente acreditado debe ser mayor a 0.")
                         else:
                             try:
                                 path_comp = utils.save_uploaded_file(comp_file_conv) if comp_file_conv else None
@@ -159,6 +198,9 @@ with tab2:
                                     diferencia_ajuste_ars=float(dif_cotiz),
                                     obra_id=s_sel['obra_id']
                                 )
+                                # Limpiar estado
+                                if key_cant in st.session_state: del st.session_state[key_cant]
+                                if key_monto in st.session_state: del st.session_state[key_monto]
                                 st.session_state["succ_cobro"] = f"Cobro de {utils.format_currency_ar(float(monto_ars_efectivo))} ({cant_cancelar:,.2f} {s_sel['moneda_codigo']}) registrado exitosamente."
                                 st.rerun()
                             except Exception as e:
@@ -243,14 +285,33 @@ with tab1:
                     df_export.to_excel(writer, index=False, sheet_name='Cobros')
                     workbook = writer.book
                     worksheet = writer.sheets['Cobros']
-                    num_format = workbook.add_format({'num_format': '#,##0.00'})
+                    num_format = workbook.add_format({'num_format': '$ #,##0.00'})
                     date_format = workbook.add_format({'num_format': 'dd/mm/yyyy'})
-                    if 'Fecha' in df_export.columns:
-                        col_idx_f = df_export.columns.get_loc("Fecha")
-                        worksheet.set_column(col_idx_f, col_idx_f, 13, date_format)
-                    if 'Monto' in df_export.columns:
-                        col_idx_m = df_export.columns.get_loc("Monto")
-                        worksheet.set_column(col_idx_m, col_idx_m, 18, num_format)
+                    
+                    # Ajuste automático del ancho de columnas y asignación de formatos
+                    for idx, col in enumerate(df_export.columns):
+                        # Calcular largo máximo entre encabezado y contenido
+                        max_len = len(str(col))
+                        if not df_export.empty:
+                            col_series_len = df_export[col].astype(str).map(len).max()
+                            if pd.notna(col_series_len):
+                                max_len = max(max_len, int(col_series_len))
+                        
+                        col_width = max(max_len + 3, 10)
+                        
+                        # Limitar ancho máximo para descripciones largas (ej. Obras)
+                        if col == "Obra":
+                            col_width = min(col_width, 60)
+                        else:
+                            col_width = min(col_width, 40)
+                            
+                        if col == 'Fecha':
+                            worksheet.set_column(idx, idx, col_width, date_format)
+                        elif col == 'Monto ($ ARS)':
+                            # Se asegura un ancho mínimo cómodo para montos contables
+                            worksheet.set_column(idx, idx, max(col_width, 18), num_format)
+                        else:
+                            worksheet.set_column(idx, idx, col_width)
                 st.download_button(
                     label="📊 Exportar Historial a Excel",
                     data=buffer.getvalue(),

@@ -26,9 +26,26 @@ def render_tab2():
         cobros_base = [c for c in (cobros_all or []) if (c['monto'] - c['total_distribuido']) > 0.01]
 
     if not cobros_base:
-        st.warning("No hay cobros cargados en el sistema.")
+        if incluir_sin_saldo:
+            st.info("No hay cobros registrados en el sistema.")
+        else:
+            st.info("No hay cobros con saldo pendiente de distribuir en el sistema. Puede marcar 'Incluir cobros sin saldo a distribuir' para consultar o modificar cobros anteriores.")
     else:
-        opciones_c = {c['id']: f"Cobro del {utils.format_date_ar(c['fecha'])} - ${c['monto']:,.2f} - Dto. {c['nro_decreto']}/{c['decreto_anio']} - Obra: {c['destino_fondos']} (Saldo libre: {utils.format_currency_ar(max(0, c['monto'] - c['total_distribuido']))})" for c in cobros_base}
+        def format_cobro_dist(c):
+            if c.get('origen_tipo') == 'convenio':
+                origen_lbl = f"Convenio {c.get('nro_convenio') or c.get('nro_decreto')}"
+                cert_txt = ""
+                if c.get('nro_certificado'):
+                    cert_txt = f" - {c['nro_certificado']}"
+                    if c.get('cantidad_moneda_solicitada') and c.get('moneda_codigo') and c.get('moneda_codigo') != 'ARS':
+                        cert_txt += f" ({c['cantidad_moneda_solicitada']:,.2f} {c['moneda_codigo']})"
+                obra_lbl = c.get('obra_nombre') or c.get('destino_fondos')
+                return f"Cobro del {utils.format_date_ar(c['fecha'])} - {utils.format_currency_ar(c['monto'])} - {origen_lbl}{cert_txt} - Obra: {obra_lbl} (Saldo libre: {utils.format_currency_ar(max(0, c['monto'] - c['total_distribuido']))})"
+            else:
+                origen_lbl = f"Dto. {c['nro_decreto']}/{c['decreto_anio']}"
+                return f"Cobro del {utils.format_date_ar(c['fecha'])} - {utils.format_currency_ar(c['monto'])} - {origen_lbl} - Obra: {c['destino_fondos']} (Saldo libre: {utils.format_currency_ar(max(0, c['monto'] - c['total_distribuido']))})"
+        
+        opciones_c = {c['id']: format_cobro_dist(c) for c in cobros_base}
         options = [None] + list(opciones_c.keys())
         c_sel_id = st.selectbox("1. Seleccione el Cobro a distribuir", options=options, format_func=lambda x: opciones_c[x] if x is not None else "--- Seleccione un cobro para comenzar ---")
         
@@ -117,6 +134,11 @@ def render_tab2():
                     
                     # Obra destino
                     cobro_obra_id = c_sel.get('obra_id')
+                    if not cobro_obra_id and c_sel.get('convenio_solicitud_id'):
+                        sol_tmp = db.get_solicitud_convenio(c_sel['convenio_solicitud_id'])
+                        if sol_tmp:
+                            cobro_obra_id = sol_tmp.get('obra_id')
+                    
                     obras_del_decreto = db.get_obras_by_decreto(c_sel['decreto_id']) if c_sel.get('decreto_id') else []
                     
                     if cobro_obra_id:
@@ -145,12 +167,13 @@ def render_tab2():
                     cant_mon_pago = monto_nuevo_fo
                     cotiz_pago = 1.0
                     chk_sp = {'es_sobrepago': False, 'mensaje': ''}
+                    resumen_ob = None
+                    is_conv = bool(c_sel.get('origen_tipo') == 'convenio' or c_sel.get('convenio_solicitud_id') is not None)
                     
                     if target_obra_id:
                         resumen_ob = db.get_resumen_contrato_obra(target_obra_id)
                         if resumen_ob and resumen_ob['es_bimonetaria']:
                             cod_m = resumen_ob['moneda_codigo']
-                            is_conv = (c_sel.get('origen_tipo') == 'convenio' or c_sel.get('convenio_solicitud_id') is not None)
                             if is_conv:
                                 cotiz_display = float(c_sel.get('cotizacion_cobro') or c_sel.get('cotizacion_solicitud') or 1.0)
                                 cant_mon_pago = round(monto_nuevo_fo / cotiz_display, 6) if cotiz_display > 0 else 0.0
@@ -188,8 +211,8 @@ def render_tab2():
                         
                     if st.button("Guardar Pago", key=f"btn_save_fo_{c_sel_id}"):
                         err_op = _validar_op_y_notas(op_nuevo_fo, notas_nuevo_fo, confirmado=confirmar_sin_op_fo)
-                        if not target_obra_id and len(obras_del_decreto) >= 1:
-                            st.error("Debe seleccionar una obra a la que se imputará este pago.")
+                        if not target_obra_id:
+                            st.error("Debe existir o seleccionarse una obra a la que se imputará este pago.")
                         elif err_op:
                             st.error(err_op)
                         elif monto_nuevo_fo <= 0:
@@ -201,7 +224,7 @@ def render_tab2():
                         else:
                             nuevo_fo = val_fin + monto_nuevo_fo
                             db.upsert_distribucion(c_sel_id, nuevo_fo, val_res, val_not)
-                            is_conv_bim = bool(resumen_ob and resumen_ob['es_bimonetaria'] and is_conv)
+                            is_conv_bim = bool(resumen_ob and resumen_ob.get('es_bimonetaria') and is_conv)
                             db.add_fin_original_uso(
                                 cobro_id=c_sel_id,
                                 monto=monto_nuevo_fo,
@@ -228,9 +251,15 @@ def render_tab2():
             if saldo_disp_para_fo > 0.01:
                 is_exp_recupero = st.session_state[f"expander_recupero_active_{c_sel_id}"]
                 with st.expander("➕ Recuperar Adelanto de Fondos Propios", expanded=is_exp_recupero):
-                    obras_del_decreto_rec = db.get_obras_by_decreto(c_sel['decreto_id'])
+                    cobro_obra_rec_id = c_sel.get('obra_id')
+                    obras_del_decreto_rec = db.get_obras_by_decreto(c_sel['decreto_id']) if c_sel.get('decreto_id') else []
                     obra_id_selected_rec = None
-                    if len(obras_del_decreto_rec) >= 1:
+                    if cobro_obra_rec_id:
+                        obra_id_selected_rec = cobro_obra_rec_id
+                        obra_rec_obj = db.get_obra(cobro_obra_rec_id)
+                        if obra_rec_obj:
+                            st.write(f"**Obra destino del recupero:** {obra_rec_obj['expediente_imuh']} - {obra_rec_obj['nombre']}")
+                    elif len(obras_del_decreto_rec) >= 1:
                         opciones_obra_rec = {o['id']: f"{o['expediente_imuh']} - {o['nombre']}" for o in obras_del_decreto_rec}
                         default_index_rec = 1 if len(obras_del_decreto_rec) == 1 else 0
                         is_disabled_rec = (len(obras_del_decreto_rec) == 1)

@@ -1413,10 +1413,16 @@ def get_cobros_con_resumen_distribucion():
                    COALESCE(d.nro_decreto, cv.nro_convenio) as nro_decreto,
                    COALESCE(d.anio, strftime('%Y', cv.fecha_firma)) as decreto_anio,
                    d.id as decreto_id, cv.id as convenio_id,
+                   cv.nro_convenio, cv.nombre_convenio, cv.ente_financiador,
+                   cs.nro_certificado, cs.periodo, cs.cantidad_moneda as cantidad_moneda_solicitada,
+                   COALESCE(cs.cotizacion_solicitud, 1.0) as cotizacion_solicitud,
+                   COALESCE(c.obra_id, cs.obra_id) as obra_id,
+                   o.nombre as obra_nombre,
                    COALESCE(d.destino_fondos, cv.nombre_convenio || ' — ' || o.nombre) as destino_fondos,
                    COALESCE(d.expediente_imuh, o.expediente_imuh) as expediente_imuh,
-                   m.simbolo as moneda_simbolo, m.codigo as moneda_codigo,
-                   c.cantidad_moneda_origen, c.cotizacion_cobro, cs.cotizacion_solicitud,
+                   COALESCE(mc.simbolo, m.simbolo, '$') as moneda_simbolo,
+                   COALESCE(mc.codigo, m.codigo, 'ARS') as moneda_codigo,
+                   c.cantidad_moneda_origen, c.cotizacion_cobro,
                    COALESCE(dist.monto_fin_orig, 0) as monto_fin_orig,
                    COALESCE(dist.monto_reserva, 0) as monto_reserva,
                    COALESCE((SELECT SUM(monto) FROM cobro_desvios WHERE cobro_id = c.id), 0) as total_desvios,
@@ -1442,6 +1448,7 @@ def get_cobros_con_resumen_distribucion():
             LEFT JOIN convenios cv ON cs.convenio_id = cv.id
             LEFT JOIN obras o ON (c.obra_id = o.id OR cs.obra_id = o.id)
             LEFT JOIN monedas_indices m ON c.moneda_origen_id = m.id
+            LEFT JOIN monedas_indices mc ON cv.moneda_id = mc.id
             LEFT JOIN cobro_distribuciones dist ON c.id = dist.cobro_id
             ORDER BY c.fecha DESC, c.id DESC
         ''')
@@ -3262,7 +3269,7 @@ def get_resumen_contrato_obra(obra_id):
         pagos_fp = [dict(r) for r in cursor.fetchall()]
         
         cursor.execute('''
-            SELECT id, fecha, monto, NULL as cantidad_moneda_amortizada, 1.0 as cotizacion_pago, 'Desvío Fin Original' as fuente
+            SELECT id, fecha, monto, NULL as cantidad_moneda_amortizada, NULL as cotizacion_pago, 'Desvío Fin Original' as fuente
             FROM cobro_desvios
             WHERE obra_id = ?
             ORDER BY fecha ASC, id ASC
@@ -3270,7 +3277,7 @@ def get_resumen_contrato_obra(obra_id):
         pagos_desv = [dict(r) for r in cursor.fetchall()]
         
         cursor.execute('''
-            SELECT id, fecha, monto, NULL as cantidad_moneda_amortizada, 1.0 as cotizacion_pago, 'Uso Reserva' as fuente
+            SELECT id, fecha, monto, NULL as cantidad_moneda_amortizada, NULL as cotizacion_pago, 'Uso Reserva' as fuente
             FROM cobro_reserva_usos
             WHERE obra_id = ?
             ORDER BY fecha ASC, id ASC
@@ -3293,7 +3300,11 @@ def get_resumen_contrato_obra(obra_id):
             if cant_raw is not None and float(cant_raw) > 0:
                 cant = float(cant_raw)
             else:
-                cotiz_p = float(p.get('cotizacion_pago') or 1.0)
+                cotiz_p = float(p.get('cotizacion_pago') or 0.0)
+                if cotiz_p <= 1.0 and cotiz_base_contrato > 1.0:
+                    cotiz_p = cotiz_base_contrato
+                elif cotiz_p <= 0.0:
+                    cotiz_p = 1.0
                 cant = (monto_ars / cotiz_p) if cotiz_p > 0 else 0.0
         total_moneda_amortizada += cant
         
@@ -3402,7 +3413,29 @@ def get_pagos_detalle_por_obra(obra_id):
         ''', (obra_id,))
         pagos_fp = [dict(r) for r in cursor.fetchall()]
         
-    todos = pagos_fo + pagos_fp
+        cursor.execute('''
+            SELECT cd.id, cd.fecha, cd.nro_op, cd.monto as monto_ars,
+                   NULL as cantidad_moneda_amortizada, NULL as cotizacion_pago,
+                   NULL as convenio_solicitud_id, NULL as motivo_sobrepago, cd.motivo as notas,
+                   'decreto' as origen_tipo, NULL as nro_certificado, NULL as nombre_convenio,
+                   'Desvío Fin Original' as tipo_fuente
+            FROM cobro_desvios cd
+            WHERE cd.obra_id = ?
+        ''', (obra_id,))
+        pagos_desv = [dict(r) for r in cursor.fetchall()]
+        
+        cursor.execute('''
+            SELECT cr.id, cr.fecha, cr.nro_op, cr.monto as monto_ars,
+                   NULL as cantidad_moneda_amortizada, NULL as cotizacion_pago,
+                   NULL as convenio_solicitud_id, NULL as motivo_sobrepago, cr.notas,
+                   'decreto' as origen_tipo, NULL as nro_certificado, NULL as nombre_convenio,
+                   'Uso Reserva' as tipo_fuente
+            FROM cobro_reserva_usos cr
+            WHERE cr.obra_id = ?
+        ''', (obra_id,))
+        pagos_res = [dict(r) for r in cursor.fetchall()]
+        
+    todos = pagos_fo + pagos_fp + pagos_desv + pagos_res
     todos.sort(key=lambda x: (str(x.get('fecha') or ''), x.get('id') or 0))
     
     for p in todos:
@@ -3413,7 +3446,12 @@ def get_pagos_detalle_por_obra(obra_id):
         else:
             cant_raw = p.get('cantidad_moneda_amortizada')
             cotiz_raw = p.get('cotizacion_pago')
-            cotiz = float(cotiz_raw) if (cotiz_raw and float(cotiz_raw) > 0) else 1.0
+            if cotiz_raw and float(cotiz_raw) > 1.0:
+                cotiz = float(cotiz_raw)
+            elif last_cotiz_base > 1.0:
+                cotiz = last_cotiz_base
+            else:
+                cotiz = 1.0
             if cant_raw is not None and float(cant_raw) > 0:
                 cant_mon = float(cant_raw)
             else:
@@ -4515,8 +4553,9 @@ def get_solicitudes_convenio_pendientes():
     with db_session() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT cs.*, cv.nro_convenio, cv.nombre_convenio, cv.ente_financiador,
-                   o.nombre as obra_nombre, o.expediente_imuh,
+            SELECT cs.*, cv.nro_convenio, cv.nro_convenio as convenio_numero, cv.nombre_convenio, cv.ente_financiador,
+                   cv.moneda_id,
+                   o.nombre as obra_nombre, o.expediente_imuh, o.expediente_imuh as obra_expediente_imuh,
                    m.simbolo as moneda_simbolo, m.codigo as moneda_codigo
             FROM convenio_solicitudes cs
             JOIN convenios cv ON cs.convenio_id = cv.id
@@ -4526,7 +4565,16 @@ def get_solicitudes_convenio_pendientes():
             ORDER BY cs.fecha_solicitud ASC
         ''')
         rows = cursor.fetchall()
-        return [dict(ix) for ix in rows]
+        result = []
+        for ix in rows:
+            d = dict(ix)
+            cant_moneda = float(d.get('cantidad_moneda') or 0.0)
+            cant_cobrada = float(d.get('cantidad_moneda_cobrada') or 0.0)
+            cant_pendiente = max(0.0, cant_moneda - cant_cobrada)
+            cotiz = float(d.get('cotizacion_solicitud') or 1.0)
+            d['monto_ars_estimado'] = cant_pendiente * cotiz if cant_pendiente > 0 else float(d.get('monto_solicitado_ars') or 0.0)
+            result.append(d)
+        return result
 
 
 def get_solicitud_convenio(solicitud_id):

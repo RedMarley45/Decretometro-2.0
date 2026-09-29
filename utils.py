@@ -45,8 +45,10 @@ def format_date_ar(date_obj):
     return date_obj.strftime("%d-%m-%Y")
 
 def get_due_date(mes, anio):
-    _, last_day = calendar.monthrange(anio, mes)
-    return datetime.date(anio, mes, last_day)
+    if not mes or not anio:
+        return None
+    _, last_day = calendar.monthrange(int(anio), int(mes))
+    return datetime.date(int(anio), int(mes), last_day)
 
 def format_week_monday(date_str):
     if not date_str:
@@ -229,7 +231,9 @@ def get_dashboard_kpis(df_cuotas, df_cobros, cobros, aportes_funcionamiento, apo
     fecha_ini = datetime.date(fecha_fin.year - 1, fecha_fin.month, 1)
 
     def check_12_meses(row):
-        due = get_due_date(row['mes'], row['anio'])
+        due = get_due_date(row.get('mes', row['mes'] if 'mes' in row else None), row.get('anio', row['anio'] if 'anio' in row else None))
+        if not due:
+            return False
         return fecha_ini <= due <= fecha_fin
 
     cuotas_12m = df_cuotas[df_cuotas.apply(check_12_meses, axis=1)]
@@ -245,29 +249,29 @@ def get_dashboard_kpis(df_cuotas, df_cobros, cobros, aportes_funcionamiento, apo
     
     for c in cobros:
         fecha_cobro = pd.to_datetime(c['fecha']).date()
-        due_date = get_due_date(c['mes'], c['anio'])
-        if fecha_cobro <= due_date:
-            hist_a_tiempo += c['monto']
+        due_date = get_due_date(c.get('mes'), c.get('anio'))
+        if due_date and fecha_cobro <= due_date:
+            hist_a_tiempo += c.get('monto', 0)
         else:
-            hist_atrasado += c['monto']
+            hist_atrasado += c.get('monto', 0)
             
     for f in aportes_funcionamiento:
-        if f['fecha_cobro']:
+        if f.get('fecha_cobro'):
             fecha_cobro = pd.to_datetime(f['fecha_cobro']).date()
-            due_date = get_due_date(f['mes'], f['anio'])
-            if fecha_cobro <= due_date:
-                hist_a_tiempo += f['monto_cobrado']
+            due_date = get_due_date(f.get('mes'), f.get('anio'))
+            if due_date and fecha_cobro <= due_date:
+                hist_a_tiempo += f.get('monto_cobrado', 0)
             else:
-                hist_atrasado += f['monto_cobrado']
+                hist_atrasado += f.get('monto_cobrado', 0)
                 
     for s in aportes_sueldo:
-        if s['monto_cobrado'] > 0 and s['fecha_cobro']:
+        if s.get('monto_cobrado', 0) > 0 and s.get('fecha_cobro'):
             fecha_cobro = pd.to_datetime(s['fecha_cobro']).date()
-            due_date = get_due_date(s['mes'], s['anio'])
-            if fecha_cobro <= due_date:
-                hist_a_tiempo += s['monto_cobrado']
+            due_date = get_due_date(s.get('mes'), s.get('anio'))
+            if due_date and fecha_cobro <= due_date:
+                hist_a_tiempo += s.get('monto_cobrado', 0)
             else:
-                hist_atrasado += s['monto_cobrado']
+                hist_atrasado += s.get('monto_cobrado', 0)
 
     total_hist = hist_a_tiempo + hist_atrasado
     

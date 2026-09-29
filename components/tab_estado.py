@@ -34,31 +34,39 @@ def render_tab1():
                 mask_dec = df_c['nro_decreto'].astype(str) == busqueda
                 df_c = df_c[mask_dec]
             else:
-                # Búsqueda parcial inteligente, incluyendo formato nro_decreto/decreto_anio
+                # Búsqueda parcial inteligente, incluyendo formato nro_decreto/decreto_anio y convenios
                 dec_completo = df_c['nro_decreto'].astype(str) + '/' + df_c['decreto_anio'].astype(str)
                 mask_dec = dec_completo.str.contains(busqueda, case=False, na=False)
                 mask_exp = df_c['expediente_imuh'].astype(str).str.contains(busqueda, case=False, na=False)
-                df_c = df_c[mask_dec | mask_exp]
+                mask_conv = df_c['nombre_convenio'].astype(str).str.contains(busqueda, case=False, na=False) if 'nombre_convenio' in df_c.columns else False
+                mask_ente = df_c['ente_financiador'].astype(str).str.contains(busqueda, case=False, na=False) if 'ente_financiador' in df_c.columns else False
+                mask_obra = df_c['obra_nombre'].astype(str).str.contains(busqueda, case=False, na=False) if 'obra_nombre' in df_c.columns else False
+                df_c = df_c[mask_dec | mask_exp | mask_conv | mask_ente | mask_obra]
             
         if not df_c.empty:
-            # Agrupar cobros por cuota_id
+            # Agrupar cobros por cuota_id (decretos) o por convenio_solicitud_id (convenios)
             grouped_cobros = {}
             for _, row in df_c.iterrows():
-                q_id = row['cuota_id']
-                if q_id not in grouped_cobros:
-                    grouped_cobros[q_id] = []
-                grouped_cobros[q_id].append(row.to_dict())
+                r_dict = row.to_dict()
+                if r_dict.get('origen_tipo') == 'convenio':
+                    g_key = f"conv_{r_dict.get('convenio_solicitud_id') or r_dict.get('id')}"
+                else:
+                    g_key = f"cuota_{r_dict.get('cuota_id') or r_dict.get('id')}"
+                if g_key not in grouped_cobros:
+                    grouped_cobros[g_key] = []
+                grouped_cobros[g_key].append(r_dict)
             
             # Ordenar grupos por la fecha del cobro más reciente
             groups_list = []
-            for q_id, group_cobros in grouped_cobros.items():
+            for g_key, group_cobros in grouped_cobros.items():
                 latest_date = max(c['fecha'] for c in group_cobros)
-                groups_list.append((q_id, group_cobros, latest_date))
+                q_id = group_cobros[0].get('cuota_id')
+                groups_list.append((g_key, q_id, group_cobros, latest_date))
             
-            groups_list.sort(key=lambda x: (x[2], x[1][0]['nro_decreto']), reverse=True)
+            groups_list.sort(key=lambda x: (x[3], str(x[2][0].get('nro_decreto') or '')), reverse=True)
             
             filtered_groups = []
-            for q_id, group_cobros, _ in groups_list:
+            for g_key, q_id, group_cobros, _ in groups_list:
                 # 1. Calcular métricas agregadas y listas unificadas
                 monto_total_cobrado = sum(c['monto'] for c in group_cobros)
                 monto_total_fin_orig = sum(c['monto_fin_orig'] for c in group_cobros)
@@ -216,18 +224,59 @@ def render_tab1():
                         col1, col2, col3 = st.columns([1.8, 2, 2.2])
                     
                         with col1:
-                            dec_cuotas = db.get_cuotas_by_decreto(first_row['decreto_id'])
-                            cuota_seq = 0
-                            for idx, c_c in enumerate(dec_cuotas):
-                                if c_c['id'] == q_id:
-                                    cuota_seq = idx + 1
-                                    break
-                            total_cuotas = len(dec_cuotas)
-                        
-                            st.markdown(f"**Cobro de:** Dto. {first_row['nro_decreto']}/{first_row['decreto_anio']}")
-                            st.caption(f"Cuota {first_row['mes']:02d}/{first_row['anio']} (Cuota {cuota_seq} de {total_cuotas}) - Destino: {first_row['destino_fondos']}")
-                            exp_imuh_d = first_row['expediente_imuh'] if pd.notna(first_row['expediente_imuh']) and first_row['expediente_imuh'] else "Sin asignar"
-                            st.caption(f"Expediente IMUH: {exp_imuh_d}")
+                            es_conv = (first_row.get('origen_tipo') == 'convenio')
+                            
+                            def _safestr(val):
+                                if pd.isna(val) or val == "": return "---"
+                                return str(int(val)) if isinstance(val, (float, int)) else str(val)
+
+                            if es_conv:
+                                nro_conv = first_row.get('nro_convenio') or _safestr(first_row.get('nro_decreto'))
+                                st.markdown(f"**Cobro de:** Convenio {nro_conv}")
+                                
+                                cert_txt = first_row.get('nro_certificado') or "Certificado"
+                                periodo_txt = f" (Período: {first_row['periodo']})" if first_row.get('periodo') else ""
+                                obra_txt = first_row.get('obra_nombre') or first_row.get('destino_fondos') or ""
+                                st.caption(f"{cert_txt}{periodo_txt} — Obra: {obra_txt}")
+                                
+                                nom_conv_txt = first_row.get('nombre_convenio')
+                                ente_txt = first_row.get('ente_financiador')
+                                detalles_c = []
+                                if nom_conv_txt:
+                                    detalles_c.append(f"Convenio: {nom_conv_txt}")
+                                if ente_txt:
+                                    detalles_c.append(f"Ente: {ente_txt}")
+                                if detalles_c:
+                                    st.caption(" | ".join(detalles_c))
+                                    
+                                exp_imuh_d = first_row.get('expediente_imuh') if pd.notna(first_row.get('expediente_imuh')) and first_row.get('expediente_imuh') else "Sin asignar"
+                                st.caption(f"Expediente IMUH: {exp_imuh_d}")
+                                
+                                # Información bimonetaria y de cotización
+                                cant_sol = first_row.get('cantidad_moneda_solicitada') or first_row.get('cantidad_moneda_origen')
+                                m_cod = first_row.get('moneda_codigo') or 'ARS'
+                                cotiz_sol = first_row.get('cotizacion_solicitud') or first_row.get('cotizacion_cobro') or 1.0
+                                if cant_sol and (m_cod != 'ARS' or cotiz_sol > 1.0):
+                                    st.caption(f"📊 **Solicitado:** {cant_sol:,.2f} {m_cod} (Cotiz. Solicitud: $ {cotiz_sol:,.2f})")
+                            else:
+                                dec_cuotas = db.get_cuotas_by_decreto(first_row['decreto_id']) if first_row.get('decreto_id') else []
+                                cuota_seq = 0
+                                for idx, c_c in enumerate(dec_cuotas):
+                                    if c_c['id'] == q_id:
+                                        cuota_seq = idx + 1
+                                        break
+                                total_cuotas = len(dec_cuotas)
+
+                                nro_dec = _safestr(first_row.get('nro_decreto'))
+                                anio_dec = _safestr(first_row.get('decreto_anio'))
+                                st.markdown(f"**Cobro de:** Dto. {nro_dec}/{anio_dec}")
+                                
+                                mes_cuota = int(first_row['mes']) if pd.notna(first_row.get('mes')) else 0
+                                anio_cuota = int(first_row['anio']) if pd.notna(first_row.get('anio')) else 0
+                                st.caption(f"Cuota {mes_cuota:02d}/{anio_cuota} (Cuota {cuota_seq} de {total_cuotas}) - Destino: {first_row.get('destino_fondos', '')}")
+                                exp_imuh_d = first_row.get('expediente_imuh') if pd.notna(first_row.get('expediente_imuh')) and first_row.get('expediente_imuh') else "Sin asignar"
+                                st.caption(f"Expediente IMUH: {exp_imuh_d}")
+
                             st.subheader(f"Total cobrado: {utils.format_currency_ar(monto_total_cobrado)}")
                         
                             st.write("**Fecha de cobro:**")
@@ -247,14 +296,26 @@ def render_tab1():
                             st.write(f"🔒 En reserva: {utils.format_currency_ar(item_en_reserva)}")
                         
                             # Item 5 Condicional: Pendiente de cobro
-                            cuota = db.get_cuota(q_id)
-                            if cuota:
-                                cuota_monto = cuota['monto']
-                                cobrado_total_cuota = db.get_total_cobrado_por_cuota(q_id)
-                            
-                                saldo_pendiente_cuota = max(0.0, round(cuota_monto - cobrado_total_cuota, 2))
-                                if saldo_pendiente_cuota > 0.01:
-                                    st.warning(f"🕒 Pendiente de cobro: {utils.format_currency_ar(saldo_pendiente_cuota)}")
+                            if not es_conv:
+                                cuota = db.get_cuota(q_id) if q_id else None
+                                if cuota:
+                                    cuota_monto = cuota['monto']
+                                    cobrado_total_cuota = db.get_total_cobrado_por_cuota(q_id)
+                                
+                                    saldo_pendiente_cuota = max(0.0, round(cuota_monto - cobrado_total_cuota, 2))
+                                    if saldo_pendiente_cuota > 0.01:
+                                        st.warning(f"🕒 Pendiente de cobro: {utils.format_currency_ar(saldo_pendiente_cuota)}")
+                            else:
+                                sol_id = first_row.get('convenio_solicitud_id')
+                                if sol_id:
+                                    sol_obj = db.get_solicitud_convenio(sol_id)
+                                    if sol_obj:
+                                        cant_mon = float(sol_obj.get('cantidad_moneda') or 0.0)
+                                        cant_cobr = float(sol_obj.get('cantidad_moneda_cobrada') or 0.0)
+                                        pend_mon = max(0.0, cant_mon - cant_cobr)
+                                        if pend_mon > 0.01:
+                                            m_cod = first_row.get('moneda_codigo') or 'ARS'
+                                            st.warning(f"🕒 Pendiente de cobro: {pend_mon:,.2f} {m_cod}")
                                 
                         with col3:
                             # Ordenar cronológicamente (más antiguo primero)
