@@ -168,14 +168,14 @@ with tab1:
                     curr_mon_id = 1
 
                 # Formulario de edición
-                e_nombre = st.text_input("Nombre de la Obra *", value=obra['nombre'], key="edit_nombre_obra")
-                e_exp = st.text_input("Expediente IMUH *", value=obra['expediente_imuh'], help="Formato estricto: 8XXXXXX-I-AAAA.", key="edit_exp_obra")
+                e_nombre = st.text_input("Nombre de la Obra *", value=obra['nombre'], key=f"edit_nombre_{obra_id}")
+                e_exp = st.text_input("Expediente IMUH *", value=obra['expediente_imuh'], help="Formato estricto: 8XXXXXX-I-AAAA.", key=f"edit_exp_{obra_id}")
                 e_prov_id = st.selectbox(
                     "Proveedor",
                     options=list(opc_provs_edit.keys()),
                     format_func=lambda x: opc_provs_edit[x],
                     index=list(opc_provs_edit.keys()).index(curr_prov_id),
-                    key="edit_prov_obra"
+                    key=f"edit_prov_{obra_id}"
                 )
                 
                 tiene_pagos_obra = bool(resumen and (resumen.get('total_pagado_efectivo_ars', 0.0) > 0 or resumen.get('total_moneda_amortizada', 0.0) > 0))
@@ -187,7 +187,7 @@ with tab1:
                     index=list(monedas_dict.keys()).index(curr_mon_id),
                     disabled=tiene_pagos_obra,
                     help="Bloqueado porque la obra ya registra pagos u órdenes de pago emitidas." if tiene_pagos_obra else None,
-                    key="edit_moneda_obra"
+                    key=f"edit_moneda_{obra_id}"
                 )
                 if tiene_pagos_obra:
                     st.caption("🔒 *La moneda contractual no puede modificarse porque la obra ya registra pagos u órdenes de pago.*")
@@ -203,7 +203,7 @@ with tab1:
                         min_value=0.0,
                         step=1000.0,
                         value=float(obra.get('monto_contrato', 0.0)),
-                        key="edit_monto_ars_obra"
+                        key=f"edit_monto_ars_{obra_id}"
                     )
                     e_monto_moneda = e_monto_contrato
                     e_cotiz_base = 1.0
@@ -220,7 +220,7 @@ with tab1:
                         min_value=0.0,
                         step=100.0,
                         value=float(obra.get('monto_contrato_moneda') or obra.get('monto_contrato') or 0.0),
-                        key="edit_monto_mon_obra"
+                        key=f"edit_monto_mon_{obra_id}"
                     )
                     old_cotiz_base = float(obra.get('cotizacion_base_contrato') or 1.0)
                     e_cotiz_base = e_c2.number_input(
@@ -228,7 +228,7 @@ with tab1:
                         min_value=0.0001,
                         step=10.0,
                         value=old_cotiz_base,
-                        key="edit_cotiz_base_obra"
+                        key=f"edit_cotiz_base_{obra_id}"
                     )
                     equiv_ars_preview = e_monto_moneda * e_cotiz_base
                     st.info(f"💡 **Equivalente Contractual Base:** {utils.format_currency_ar(equiv_ars_preview)}")
@@ -246,8 +246,8 @@ with tab1:
                             f_val = datetime.datetime.strptime(str(obra['fecha_contrato']), "%Y-%m-%d").date()
                         except Exception:
                             pass
-                    e_fecha_contrato = st.date_input("Fecha de Firma del Contrato", value=f_val, key="edit_fecha_contrato")
-                    e_notas_contrato = st.text_area("Notas / Cláusula de Ajuste", value=obra.get('notas_contrato') or '', key="edit_notas_contrato")
+                    e_fecha_contrato = st.date_input("Fecha de Firma del Contrato", value=f_val, key=f"edit_fecha_c_{obra_id}")
+                    e_notas_contrato = st.text_area("Notas / Cláusula de Ajuste", value=obra.get('notas_contrato') or '', key=f"edit_notas_c_{obra_id}")
                     e_monto_contrato = equiv_ars_preview
 
                 st.warning("⚠️ **Atención:** Si cambias el nombre o el expediente IMUH, el sistema actualizará en cascada todos los registros lógicos y solicitudes históricas asociadas.")
