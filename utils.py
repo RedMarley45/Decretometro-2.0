@@ -159,6 +159,22 @@ def restore_backup(current_db_path, backup_db_path):
     pre_restore_dir = os.path.join(os.path.dirname(current_db_path), "backups", "pre_restore")
     create_backup(current_db_path, backup_dir=pre_restore_dir)
 
+    # Rotación automática: conservar como máximo los últimos 5 resguardos preventivos
+    try:
+        if os.path.exists(pre_restore_dir):
+            existing_backups = sorted(
+                [os.path.join(pre_restore_dir, f) for f in os.listdir(pre_restore_dir) if f.endswith('.db')],
+                key=os.path.getmtime
+            )
+            while len(existing_backups) > 5:
+                oldest = existing_backups.pop(0)
+                try:
+                    os.remove(oldest)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     # 3. Restauración binaria a nivel páginas de SQLite (clona todas las tablas e índices)
     src_conn = sqlite3.connect(backup_db_path)
     dst_conn = sqlite3.connect(current_db_path, timeout=30.0)

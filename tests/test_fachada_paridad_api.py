@@ -36,8 +36,10 @@ def test_ausencia_ciclos_importacion():
 
 
 def test_paridad_simbolos_con_original():
-    """Regla 2 y 3: Verifica que todos los símbolos de la API histórica existan en la fachada."""
-    original_symbols_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scratch", "database_original_backup.py")
+    """Regla 2 y 3: Verifica que todos los símbolos de la API histórica existan en la fachada como superconjunto."""
+    fixtures_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "database_original_backup.py")
+    scratch_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scratch", "database_original_backup.py")
+    original_symbols_path = fixtures_path if os.path.exists(fixtures_path) else scratch_path
     
     if os.path.exists(original_symbols_path):
         import importlib.util

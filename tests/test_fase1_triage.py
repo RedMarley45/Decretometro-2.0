@@ -108,7 +108,15 @@ def test_backup_restore_binario():
     with pytest.raises(Exception):
         utils.restore_backup(current_db_path=temp_target, backup_db_path=corrupt_file)
 
-    # Limpieza
+    # Limpieza higiénica de archivos de prueba y resguardos automáticos
+    pre_restore_dir = os.path.join(conftest.TMP_DIR, "backups", "pre_restore")
+    if os.path.exists(pre_restore_dir):
+        import shutil
+        try:
+            shutil.rmtree(os.path.join(conftest.TMP_DIR, "backups"))
+        except Exception:
+            pass
+
     for p in [temp_target, backup_file, corrupt_file]:
         if os.path.exists(p):
             try:
