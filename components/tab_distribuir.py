@@ -180,14 +180,21 @@ def render_tab2():
                                 st.info(f"ℹ️ **Imputación automática:** Amortiza **{cant_mon_pago:,.2f} {cod_m}** a cotización **${cotiz_display:,.2f}** heredada del Certificado de Convenio.")
                             else:
                                 c_cot1, c_cot2 = st.columns(2)
+                                info_cotiz = db.get_ultima_cotizacion_info(resumen_ob['moneda_id']) if resumen_ob else None
+                                val_sugerido = float(info_cotiz['cotizacion']) if info_cotiz else float(resumen_ob.get('cotizacion_base_contrato') or 1.0)
                                 cotiz_pago = c_cot1.number_input(
                                     f"Cotización OP ($ ARS por {cod_m}) *",
                                     min_value=0.0001,
                                     step=10.0,
-                                    value=float(resumen_ob.get('cotizacion_base_contrato') or 1.0),
+                                    value=val_sugerido,
                                     key=f"cotiz_fo_input_{c_sel_id}",
                                     on_change=keep_fo_open
                                 )
+                                if info_cotiz:
+                                    c_cot1.caption(f"📌 Cotización sugerida (${info_cotiz['cotizacion']:,.2f}) al {info_cotiz['fecha']} ({info_cotiz['origen']}). Verifique con la cotización oficial a la fecha del pago.")
+                                else:
+                                    c_cot1.caption("📌 Cotización base de contrato. Ingrese la cotización oficial a la fecha de la OP.")
+
                                 cant_mon_pago = round(monto_nuevo_fo / cotiz_pago, 6) if cotiz_pago > 0 else 0.0
                                 c_cot2.write(f"**Amortiza contractualmente:**\n\n`{cant_mon_pago:,.2f} {cod_m}`")
                                 

@@ -32,21 +32,26 @@ with col1:
 
 with col2:
     st.markdown("### Restaurar Copia de Seguridad")
-    st.warning("La restauración inteligente agregará a la base de datos actual los registros que se hayan eliminado/perdido. No duplicará información ni modificará los PDFs guardados en el disco.")
+    st.warning("La restauración reemplazará la base de datos con el respaldo completo seleccionado (las 29 tablas). Antes de proceder, el sistema creará automáticamente una copia de resguardo de seguridad en 'backups/pre_restore'.")
     uploaded_bkp = st.file_uploader("Subir archivo de Backup (.db)", type=['db'])
     
     if uploaded_bkp and st.button("Restaurar ahora", type="secondary", use_container_width=True):
+        db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "decretometro.db")
+        tmp_path = os.path.join(os.path.dirname(db_path), f"temp_restore_{os.getpid()}.db")
         try:
-            db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "decretometro.db")
-            tmp_path = os.path.join(os.path.dirname(db_path), "temp_restore.db")
             with open(tmp_path, "wb") as f:
                 f.write(uploaded_bkp.getbuffer())
                 
             utils.restore_backup(db_path, tmp_path)
-            os.remove(tmp_path)
-            st.success("Restauración inteligente completada. Los datos faltantes han sido repoblados.")
+            st.success("Restauración completada con éxito. La base de datos y todas sus tablas han sido restauradas y actualizadas.")
         except Exception as e:
             st.error(f"Error al restaurar: {e}")
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
 st.markdown("---")
 st.info("El catálogo de **Gastos de Funcionamiento** se administra ahora desde la sección **💼 Gastos de Funcionamiento** en el menú lateral.")

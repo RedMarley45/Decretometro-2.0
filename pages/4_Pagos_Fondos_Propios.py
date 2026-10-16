@@ -106,6 +106,9 @@ with tab2:
         
         if es_bimon and resumen_obra:
             cod_mon = resumen_obra['moneda_codigo']
+            info_cotiz = db.get_ultima_cotizacion_info(obra_sel['moneda_id']) if obra_sel else None
+            val_sugerido = float(info_cotiz['cotizacion']) if info_cotiz else float(resumen_obra.get('cotizacion_base_contrato') or 1.0)
+
             st.markdown("---")
             st.markdown(f"#### Imputación Contractual en Moneda de Origen ({cod_mon})")
             c_bim1, c_bim2 = st.columns(2)
@@ -113,9 +116,14 @@ with tab2:
                 f"Cotización de la OP ($ ARS por {cod_mon}) *",
                 min_value=0.0001,
                 step=10.0,
-                value=float(resumen_obra.get('cotizacion_base_contrato') or 1.0),
+                value=val_sugerido,
                 help="Cotización vigente al momento del libramiento de la Orden de Pago para amortizar unidades contractuales."
             )
+            if info_cotiz:
+                c_bim1.caption(f"📌 Cotización sugerida (${info_cotiz['cotizacion']:,.2f}) correspondiente al {info_cotiz['fecha']} ({info_cotiz['origen']}). Verifique que coincida con la cotización oficial a la fecha del comprobante.")
+            else:
+                c_bim1.caption("📌 Cotización base de contrato. Ingrese la cotización oficial a la fecha de la OP.")
+
             cant_moneda_amort = round(monto / cotiz_pago, 6) if cotiz_pago > 0 else 0.0
             c_bim2.info(f"💡 **Amortización Contractual:** `{cant_moneda_amort:,.2f} {cod_mon}`")
 

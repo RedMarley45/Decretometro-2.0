@@ -3,11 +3,23 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Databases
+# Databases and logs
 *.db
+*.db-*
 *.db.bak
+*.sqlite
+*.sqlite3
+*.log
 
-# Backups and temporary files
+# Backups, credentials and temporary files
+.env
+*.env.*
+*.pem
+*.key
+*.bak
+*.old
+*.orig
+*.pre_*
 backups/
 temp_test.pdf
 test_afectacion.pdf

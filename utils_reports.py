@@ -77,11 +77,18 @@ def obtener_datos_composicion(sel_dec_id, sel_cuota_id):
         usos_r = db.get_reserva_usos_by_cobro(cb_id)
         tot_usos_r = sum(u['monto'] for u in usos_r)
         
-        # Recuperos a reserva
+        # Recuperos a reserva (desde usos de reserva y desde desvíos iniciales)
         tot_rec_a_res = 0.0
         for u in usos_r:
             recs = db.get_recuperos_by_reserva_uso(u['id'])
             for r in recs:
+                if r['destino_tipo'] == 'reserva':
+                    tot_rec_a_res += r['monto']
+
+        desvios = db.get_desvios_by_cobro(cb_id)
+        for d in desvios:
+            recs_d = db.get_recuperos_by_desvio(d['id'])
+            for r in recs_d:
                 if r['destino_tipo'] == 'reserva':
                     tot_rec_a_res += r['monto']
                     
@@ -190,7 +197,6 @@ def obtener_datos_composicion(sel_dec_id, sel_cuota_id):
                 })
                 
         # F. Desvíos Iniciales (Activos y Recuperos Redireccionados)
-        desvios = db.get_desvios_by_cobro(cb_id)
         for d in desvios:
             recs = db.get_recuperos_by_desvio(d['id'])
             sum_recs = sum(r['monto'] for r in recs)
@@ -211,7 +217,10 @@ def obtener_datos_composicion(sel_dec_id, sel_cuota_id):
                 
             # Recuperos redireccionados
             for r in recs:
-                if r['destino_tipo'] == 'sin_distribucion':
+                if r['destino_tipo'] == 'reserva':
+                    # Los recuperos a reserva ya están computados en el saldo neto de reserva (res_saldo_neto)
+                    continue
+                elif r['destino_tipo'] == 'sin_distribucion':
                     tot_rec_sin_distribucion += r['monto']
                 elif r['destino_tipo'] == 'compensacion':
                     detalles = db.obtener_detalles_compensacion_grupo(r['grupo_compensacion_id'])
@@ -268,9 +277,24 @@ def obtener_datos_composicion(sel_dec_id, sel_cuota_id):
                         "Aclaraciones": ""
                     })
                 
-        # G. Sin Distribuir
+        # G. Recuperos de Fondos Propios
+        recuperos_fp = db.get_recuperos_fondos_propios_by_cobro(cb_id)
+        tot_recuperos_fp = 0.0
+        for rfp in recuperos_fp:
+            tot_recuperos_fp += rfp['monto']
+            estado_actual_filas.append({
+                "Fecha": utils.format_date_ar(rfp['fecha']),
+                "Movimiento": "Recupero a Fondos Propios",
+                "Monto": rfp['monto'],
+                "Orden de Pago (OP)": rfp.get('nro_op') or "Sin asignar",
+                "Destino": "Reintegro a Fondos Propios",
+                "obra_id": rfp.get("obra_id"),
+                "Aclaraciones": rfp.get('motivo') or "Reintegro por adelanto de fondos propios"
+            })
+
+        # H. Sin Distribuir
         tot_desvios_ini = sum(d['monto'] for d in desvios)
-        saldo_libre = cb['monto'] - (monto_fo + monto_res + tot_desvios_ini) + tot_rec_sin_distribucion
+        saldo_libre = cb['monto'] - (monto_fo + monto_res + tot_desvios_ini + tot_recuperos_fp) + tot_rec_sin_distribucion
         if saldo_libre > 0.01:
             estado_actual_filas.append({
                 "Fecha": "-",
@@ -1067,7 +1091,7 @@ def obtener_estado_deudas_por_obra(obra):
                 LEFT JOIN obras o_dest ON cd.obra_id = o_dest.id
                 WHERE (
                     d_orig.id IN (SELECT decreto_id FROM decretos_obras WHERE obra_id = ?)
-                    OR conv.id IN (SELECT convenio_id FROM convenio_obras WHERE obra_id = ?)
+                    OR (c.origen_tipo = 'convenio' AND COALESCE(c.obra_id, csol.obra_id) = ?)
                 )
             ''', (obra_id, obra_id))
             for r in cursor.fetchall():
@@ -1103,7 +1127,7 @@ def obtener_estado_deudas_por_obra(obra):
                 WHERE ru.destino_tipo != 'fin_original'
                   AND (
                       d_orig.id IN (SELECT decreto_id FROM decretos_obras WHERE obra_id = ?)
-                      OR conv.id IN (SELECT convenio_id FROM convenio_obras WHERE obra_id = ?)
+                      OR (c.origen_tipo = 'convenio' AND COALESCE(c.obra_id, csol.obra_id) = ?)
                   )
             ''', (obra_id, obra_id))
             for r in cursor.fetchall():

@@ -10,10 +10,7 @@ import uuid
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import database as db
-import importlib
-importlib.reload(db)
 import utils
-importlib.reload(utils)
 
 from database import (
     init_db, get_decretos, get_cuotas_by_decreto, get_all_cobros, 
@@ -38,6 +35,20 @@ utils.inject_style()
 # Inicializar la base de datos si no existe
 init_db()
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _obtener_pdf_inicio_bytes(fecha_str):
+    temp_path = os.path.join(tempfile.gettempdir(), f"Reporte_Financiero_{fecha_str}_{uuid.uuid4().hex[:8]}.pdf")
+    try:
+        generar_reporte_pdf(temp_path)
+        with open(temp_path, "rb") as f:
+            return f.read()
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
 # --- HEADER CON TÍTULO Y BOTÓN DE PDF ---
 col_t1, col_t2 = st.columns([4, 1.2])
 with col_t1:
@@ -45,14 +56,12 @@ with col_t1:
 with col_t2:
     st.write("")
     try:
-        temp_path = os.path.join(tempfile.gettempdir(), f"Reporte_Financiero_{datetime.date.today().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}.pdf")
-        generar_reporte_pdf(temp_path)
-        with open(temp_path, "rb") as f:
-            pdf_bytes = f.read()
+        fecha_hoy_str = datetime.date.today().strftime('%Y%m%d')
+        pdf_bytes = _obtener_pdf_inicio_bytes(fecha_hoy_str)
         st.download_button(
             label="📄 Generar Reporte PDF",
             data=pdf_bytes,
-            file_name=f"Reporte_Financiero_{datetime.date.today().strftime('%Y%m%d')}.pdf",
+            file_name=f"Reporte_Financiero_{fecha_hoy_str}.pdf",
             mime="application/pdf",
             use_container_width=True,
             type="primary"
@@ -610,57 +619,6 @@ if not df_cuotas.empty and not df_decretos.empty:
         df_hp['Saldo Pendiente'] = df_hp['Saldo Pendiente'].apply(lambda x: format_currency_ar(x))
         
         st.dataframe(df_hp, use_container_width=True, hide_index=True)
-
-    # TABLA 4: SEGUIMIENTO DE CONVENIOS MULTIOBRA Y FONDOS EXTERNOS
-    convenios_list = get_convenios()
-    if convenios_list:
-        st.markdown("---")
-        st.subheader("📜 Convenios Multiobra y Financiamiento Externo")
-        
-        col_c1, col_c2, col_c3, col_c4 = st.columns(4)
-        total_conv_activos = len([c for c in convenios_list if c.get('estado') in ('Activo', 'Vigente')])
-        
-        # Solicitudes pendientes de cobro bancario
-        sols_conv_pend = get_solicitudes_convenio_pendientes()
-        tot_sol_pend_ars = sum(
-            sc.get('monto_ars_estimado') if sc.get('monto_ars_estimado') is not None
-            else (max(0.0, float(sc.get('cantidad_moneda') or 0.0) - float(sc.get('cantidad_moneda_cobrada') or 0.0)) * float(sc.get('cotizacion_solicitud') or 1.0))
-            for sc in sols_conv_pend
-        )
-        
-        # Cobros de convenios registrados
-        cobros_conv = [c for c in cobros if c.get('origen_tipo') == 'convenio']
-        total_cobrado_conv_ars = sum(c['monto'] for c in cobros_conv)
-        
-        col_c1.metric("Convenios Activos", f"{total_conv_activos}", help="Convenios vigentes con Provincia o Nación")
-        col_c2.metric("Total Convenios", f"{len(convenios_list)}")
-        col_c3.metric("Certificados en Trámite", format_currency_ar(tot_sol_pend_ars), help="Monto estimado en Pesos de solicitudes presentadas pendientes de acreditación")
-        col_c4.metric("Total Cobrado Convenios", format_currency_ar(total_cobrado_conv_ars), help="Total percibido en cuenta bancaria por convenios")
-        
-        # Tabla comparativa de control de convenios
-        tabla_res_conv = []
-        for cv in convenios_list:
-            res_ctrl = get_resumen_control_convenio(cv['id'])
-            cod_mon = cv.get('moneda_codigo') or 'ARS'
-            simb_mon = cv.get('moneda_simbolo') or '$'
-            dec_mon = cv.get('moneda_decimales', 2)
-            
-            tabla_res_conv.append({
-                "Convenio": f"{cv['nro_convenio']} - {cv['nombre_convenio']}",
-                "Ente Financiador": cv.get('ente_financiador', '-'),
-                "Moneda / Índice": f"{cod_mon} ({simb_mon})",
-                "Cupo Total Contratado": utils.format_moneda_custom(res_ctrl['pactado_moneda_total'], simb_mon, dec_mon),
-                "Cobrado Efectivo": utils.format_moneda_custom(res_ctrl['cobrado_moneda_total'], simb_mon, dec_mon),
-                "En Trámite": utils.format_moneda_custom(res_ctrl['saldo_en_transito_moneda'], simb_mon, dec_mon),
-                "Saldo Remanente": utils.format_moneda_custom(res_ctrl['saldo_remanente_moneda'], simb_mon, dec_mon),
-                "Total Cobrado ($ ARS)": format_currency_ar(res_ctrl['cobrado_ars_total']),
-                "Estado": cv['estado']
-            })
-            
-        st.dataframe(
-            pd.DataFrame(tabla_res_conv),
-            use_container_width=True,
-            hide_index=True
-        )
 else:
     st.info("No hay datos suficientes para mostrar el Dashboard. Ve a la pestaña de Decretos para comenzar a cargar información.")
+

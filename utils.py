@@ -137,81 +137,43 @@ def create_backup(db_path, backup_dir="backups"):
     return backup_path
 
 def restore_backup(current_db_path, backup_db_path):
-    """Restaura datos de un backup hacia la BD actual usando ATTACH + INSERT OR IGNORE.
-    Garantiza cierre de conexión y rollback ante errores (Fix 6).
+    """Restaura de forma atómica e íntegra un backup completo usando la API nativa de SQLite,
+    preservando las 29 tablas y ejecutando migraciones si el backup fuera de un esquema anterior.
     """
-    conn_curr = sqlite3.connect(current_db_path)
-    conn_curr.execute("PRAGMA foreign_keys = ON;")
+    if not os.path.exists(backup_db_path):
+        raise FileNotFoundError(f"No se encontró el archivo de backup: {backup_db_path}")
+
+    # 1. Validar que el archivo sea una base SQLite íntegra antes de tocar producción
+    chk_conn = sqlite3.connect(backup_db_path)
     try:
-        # Hacemos ATTACH con la ruta escapada para evitar problemas de path (Fix 6)
-        backup_path_escaped = backup_db_path.replace("'", "''")
-        conn_curr.execute(f"ATTACH DATABASE '{backup_path_escaped}' AS backup_db")
-        cursor = conn_curr.cursor()
-        # Insertar decretos
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.decretos (id, nro_decreto, anio, nro_expediente, destino_fondos, estado, pdf_path, expediente_imuh)
-            SELECT id, nro_decreto, anio, nro_expediente, destino_fondos, estado, pdf_path, expediente_imuh FROM backup_db.decretos
-        ''')
-        # Insertar cuotas
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.cuotas (id, decreto_id, mes, anio, monto)
-            SELECT id, decreto_id, mes, anio, monto FROM backup_db.cuotas
-        ''')
-        # Insertar cobros
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.cobros (id, cuota_id, monto, fecha, comprobante_path)
-            SELECT id, cuota_id, monto, fecha, comprobante_path FROM backup_db.cobros
-        ''')
-        # Insertar Funcionamiento
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.aportes_funcionamiento (id, anio, mes, monto_pautado, monto_cobrado, fecha_cobro)
-            SELECT id, anio, mes, monto_pautado, monto_cobrado, fecha_cobro FROM backup_db.aportes_funcionamiento
-        ''')
-        # Insertar Sueldos
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.aportes_sueldo (id, anio, mes, monto_pedido, fecha_pedido, monto_cobrado, fecha_cobro, estado, fecha_renuncia)
-            SELECT id, anio, mes, monto_pedido, fecha_pedido, monto_cobrado, fecha_cobro, estado, fecha_renuncia FROM backup_db.aportes_sueldo
-        ''')
-        # Insertar SAC
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.aportes_sac (id, anio, cuota_nro, monto_pedido, fecha_pedido, monto_cobrado, fecha_cobro, estado, fecha_renuncia)
-            SELECT id, anio, cuota_nro, monto_pedido, fecha_pedido, monto_cobrado, fecha_cobro, estado, fecha_renuncia FROM backup_db.aportes_sac
-        ''')
-        # Insertar Prestamos Internos
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.prestamos_internos (id, decreto_origen_id, destino, monto, fecha, motivo, devolucion_estado, fecha_devolucion)
-            SELECT id, decreto_origen_id, destino, monto, fecha, motivo, devolucion_estado, fecha_devolucion FROM backup_db.prestamos_internos
-        ''')
-        # Insertar Recuperos Internos
-        cursor.execute('''
-            INSERT OR IGNORE INTO main.recuperos_internos (id, prestamo_id, monto, fecha)
-            SELECT id, prestamo_id, monto, fecha FROM backup_db.recuperos_internos
-        ''')
-        # Restaurar tablas de trazabilidad y solicitudes
-        tablas_trazabilidad = [
-            "cobro_distribuciones (id, cobro_id, monto_fin_orig, monto_reserva, notas)",
-            "cobro_reserva_usos (id, cobro_id, monto, destino_tipo, destino_detalle, fecha, notas, nro_op, decreto_destino_id)",
-            "cobro_desvios (id, cobro_id, destino, monto, motivo, fecha, nro_op, decreto_destino_id)",
-            "cobro_desvios_recuperos (id, desvio_id, monto, fecha, destino_tipo, destino_detalle, nro_op, decreto_destino_id)",
-            "cobro_reserva_usos_recuperos (id, reserva_uso_id, monto, fecha, destino_tipo, destino_detalle, decreto_destino_id, nro_op)",
-            "cobro_fin_original_usos (id, cobro_id, monto, fecha, nro_op, notas)",
-            "solicitudes_financiamiento (id, nro_expediente, expediente_imuh, destino_fondos, monto_solicitado, fecha_solicitud, estado, decreto_id, pdf_path, notas)"
-        ]
-        for t in tablas_trazabilidad:
-            nombre_tabla = t.split(" ")[0]
-            columnas = t.split("(")[1].replace(")", "")
-            cursor.execute(f'''
-                INSERT OR IGNORE INTO main.{nombre_tabla} ({columnas})
-                SELECT {columnas} FROM backup_db.{nombre_tabla}
-            ''')
-        conn_curr.commit()
-        conn_curr.execute("DETACH DATABASE backup_db")
+        res = chk_conn.execute("PRAGMA integrity_check;").fetchone()
+        if not res or res[0].lower() != "ok":
+            raise ValueError(f"El archivo de backup está dañado o corrupto: {res}")
+        v = chk_conn.execute("SELECT version FROM schema_version WHERE id=1;").fetchone()
+        if not v:
+            raise ValueError("El archivo no corresponde a una base de datos válida de Decretómetro.")
+    finally:
+        chk_conn.close()
+
+    # 2. Resguardo preventivo automático del estado actual antes de pisar la base
+    pre_restore_dir = os.path.join(os.path.dirname(current_db_path), "backups", "pre_restore")
+    create_backup(current_db_path, backup_dir=pre_restore_dir)
+
+    # 3. Restauración binaria a nivel páginas de SQLite (clona todas las tablas e índices)
+    src_conn = sqlite3.connect(backup_db_path)
+    dst_conn = sqlite3.connect(current_db_path, timeout=30.0)
+    try:
+        src_conn.backup(dst_conn)
     except Exception as e:
-        conn_curr.rollback()
-        logging.error(f"Error durante la restauración del backup: {e}")
+        logging.error(f"Error crítico durante la restauración de páginas SQLite: {e}")
         raise
     finally:
-        conn_curr.close()
+        dst_conn.close()
+        src_conn.close()
+
+    # 4. Asegurar que el esquema restaurado quede actualizado a la última versión
+    import database as db
+    db.init_db()
 
 def get_dashboard_kpis(df_cuotas, df_cobros, cobros, aportes_funcionamiento, aportes_sueldo):
     import datetime

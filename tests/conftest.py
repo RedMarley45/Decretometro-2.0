@@ -41,6 +41,7 @@ def preparar_base_temporal(db_module, nombre="base_prueba.db"):
     # Salvaguarda: nunca permitir que un test apunte a la base real.
     assert os.path.abspath(db_module.DB_PATH) != os.path.abspath(PROD_DB), \
         "Los tests no pueden usar la base de datos real."
+    db_module.init_db()
     return destino
 
 
