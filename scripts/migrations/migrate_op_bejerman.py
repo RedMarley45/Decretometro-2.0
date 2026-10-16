@@ -1,5 +1,10 @@
 import sqlite3
 import re
+import os
+import sys
+
+# Raíz del proyecto (scripts/migrations/ -> scripts/ -> raíz)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from database import get_connection, init_db
 
 def clean_op(nro_op):

@@ -1,5 +1,6 @@
 import pytest
 import datetime
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 
 def test_calculo_teorico_y_discrepancias():

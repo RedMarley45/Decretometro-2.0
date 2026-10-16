@@ -1,7 +1,7 @@
 import os
 import sys
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 
 import database as db
 import utils

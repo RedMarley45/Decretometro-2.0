@@ -1,9 +1,11 @@
 import os
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 
 def run_tests():
     # Redirigir a una base de datos temporal
-    TEMP_DB = 'test_temp.db'
+    os.makedirs(conftest.TMP_DIR, exist_ok=True)
+    TEMP_DB = os.path.join(conftest.TMP_DIR, 'test_temp.db')
     if os.path.exists(TEMP_DB):
         os.remove(TEMP_DB)
 

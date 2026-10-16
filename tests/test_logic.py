@@ -1,9 +1,9 @@
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 
-TEMP_DB = 'test_temp_logic.db'
+TEMP_DB = os.path.join(conftest.TMP_DIR, 'test_temp_logic.db')
 if os.path.exists(TEMP_DB):
     try: os.remove(TEMP_DB)
     except: pass

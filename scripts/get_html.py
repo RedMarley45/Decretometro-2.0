@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import database as db
 import trazabilidad_graph as tg
 import json
@@ -206,5 +210,6 @@ html_code = f"""
 </html>
 """
 
-open("test_output.html", "w", encoding="utf-8").write(html_code)
-print("Saved to test_output.html")
+_salida = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "test_output.html")
+open(_salida, "w", encoding="utf-8").write(html_code)
+print(f"Saved to {_salida}")

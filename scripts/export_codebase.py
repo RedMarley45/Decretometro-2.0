@@ -1,13 +1,16 @@
 import os
 
 OUTPUT_FILE = "decretometro_codigo_completo.md"
-EXCLUDE_DIRS = {'.git', '.venv', '__pycache__', '.agents', 'brain', 'scratch', '.pytest_cache'}
+EXCLUDE_DIRS = {'.git', '.venv', '__pycache__', '.agents', 'brain', 'scratch', '.pytest_cache', 'Auditorías'}
 EXCLUDE_FILES = {'decretometro.db', OUTPUT_FILE}
 ALLOWED_EXTENSIONS = {'.py', '.css', '.bat', '.sh', '.md', '.sql', '.toml'}
 
 def export_codebase():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    output_path = os.path.join(base_dir, OUTPUT_FILE)
+    # Directorio raíz del proyecto (un nivel arriba de scripts/)
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    output_dir = os.path.join(base_dir, "Auditorías")
+    os.makedirs(output_dir, exist_ok=True)
+    output_path = os.path.join(output_dir, OUTPUT_FILE)
     
     written_count = 0
     with open(output_path, 'w', encoding='utf-8') as out:

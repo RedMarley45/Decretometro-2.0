@@ -19,6 +19,9 @@
 * **Páginas:** Cada módulo principal de la aplicación reside en la carpeta `pages/` (ej. `2_Obras.py`, `3_Solicitudes_de_financiamiento.py`, etc.).
 * **Componentes UI:** Las pestañas y componentes reutilizables de la interfaz residen en `components/` (ej. `tab_estado.py`, `tab_distribuir.py`, etc.).
 * **Reportes y Utilidades:** Generación de PDF y funciones auxiliares en `pdf_generator.py` y `utils.py`.
+* **Pruebas:** Todos los tests residen en `tests/`. `tests/conftest.py` aísla la base de datos (trabaja sobre una copia en `tests/.tmp/`); cada test debe hacer `import conftest` antes de `import database`.
+* **Scripts:** Scripts de mantenimiento, migración y utilitarios en `scripts/` (`dev/`, `migrations/`). Deben calcular rutas a partir de `__file__`, nunca de la carpeta de ejecución.
+* **Auditorías:** Informes, planes y volcados de código generados por Claude y otros agentes residen en `Auditorías/`.
 
 ---
 

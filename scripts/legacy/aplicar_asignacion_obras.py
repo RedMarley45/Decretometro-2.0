@@ -14,6 +14,14 @@ p2_db = os.path.join(p2_dir, "decretometro.db")
 
 csv_path = os.path.join(p1_dir, "Asignación de obras.csv")
 
+for _ruta in (p1_db, csv_path):
+    if not os.path.exists(_ruta):
+        raise SystemExit(
+            f"ABORTADO: no existe el archivo esperado:\n  {_ruta}\n"
+            "Este script apunta al proyecto anterior (decretometro). "
+            "Revisalo antes de ejecutarlo: no fue reapuntado a decretometro_2.0 a propósito."
+        )
+
 conn = sqlite3.connect(p1_db)
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()

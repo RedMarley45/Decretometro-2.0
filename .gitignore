@@ -12,6 +12,8 @@ backups/
 temp_test.pdf
 test_afectacion.pdf
 test_report.pdf
+tests/.tmp/
+tests/test_output.html
 test_uncompressed.pdf
 scratch_output.txt
 

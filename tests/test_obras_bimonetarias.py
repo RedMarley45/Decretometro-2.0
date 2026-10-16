@@ -3,6 +3,7 @@ import sys
 import unittest
 import datetime
 
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 
 ORIGINAL_DB_PATH = db.DB_PATH

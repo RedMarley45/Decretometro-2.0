@@ -6,6 +6,14 @@ md_file = r"C:\Users\bornemanns\.gemini\antigravity-ide\scratch\decretometro\Mon
 backup_db = r"C:\Users\bornemanns\.gemini\antigravity-ide\scratch\decretometro\Montos de obra\obras_backup_15-09-2026_10-56.db"
 decretometro_db = r"C:\Users\bornemanns\.gemini\antigravity-ide\scratch\decretometro\decretometro.db"
 
+for _ruta in (md_file, backup_db, decretometro_db):
+    if not os.path.exists(_ruta):
+        raise SystemExit(
+            f"ABORTADO: no existe el archivo esperado:\n  {_ruta}\n"
+            "Este script apunta al proyecto anterior (decretometro). "
+            "Revisalo antes de ejecutarlo: no fue reapuntado a decretometro_2.0 a propósito."
+        )
+
 def main():
     # 1. Parse markdown
     expedientes_to_update = set()

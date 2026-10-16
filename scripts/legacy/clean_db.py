@@ -4,6 +4,13 @@ import os
 DB_PATH = 'c:\\Users\\bornemanns\\.gemini\\antigravity\\scratch\\decretometro\\decretometro.db'
 UPLOADS_DIR = 'c:\\Users\\bornemanns\\.gemini\\antigravity\\scratch\\decretometro\\uploads'
 
+if not os.path.exists(DB_PATH):
+    raise SystemExit(
+        f"ABORTADO: no existe la base de datos esperada:\n  {DB_PATH}\n"
+        "Este script apunta al proyecto anterior (decretometro). "
+        "Revisalo antes de ejecutarlo: no fue reapuntado a decretometro_2.0 a propósito."
+    )
+
 def clean_db():
     print("WARNING: Estás a punto de borrar los datos de la base de datos de producción/desarrollo.")
     respuesta = input("¿Estás seguro de continuar? (escribe 'SI' para proceder): ")

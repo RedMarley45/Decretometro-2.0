@@ -1,3 +1,4 @@
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 import datetime
 

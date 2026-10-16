@@ -3,11 +3,12 @@ import re
 import os
 import sys
 
-# Append parent dir to path to import database
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Raíz del proyecto (scripts/migrations/ -> scripts/ -> raíz)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, BASE_DIR)
 import utils
 
-DB_PATH = "decretometro.db"
+DB_PATH = os.path.join(BASE_DIR, "decretometro.db")
 
 def migrate():
     print("Starting migration to populate gastos_funcionamiento...")

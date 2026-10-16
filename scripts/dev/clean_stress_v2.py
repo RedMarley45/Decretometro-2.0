@@ -1,5 +1,5 @@
 import os, sys, sqlite3
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import database as db
 
 def clean():

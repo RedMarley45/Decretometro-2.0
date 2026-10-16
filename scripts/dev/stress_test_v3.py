@@ -3,7 +3,7 @@ import datetime
 import os
 import sys
 
-sys.path.append(os.getcwd())
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))  # raíz del proyecto
 import database as db
 
 def log(msg):

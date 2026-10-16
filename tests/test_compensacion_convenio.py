@@ -5,6 +5,7 @@ import datetime
 import sqlite3
 
 # Import project modules
+import conftest  # noqa: F401  (ajusta sys.path y aísla la base de datos)
 import database as db
 import utils_reports
 import backend_compensaciones
