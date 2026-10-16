@@ -196,13 +196,14 @@ def generar_reporte_pdf(filepath):
     tot_r = 0
     cobros_dist = db.get_cobros_con_resumen_distribucion()
     for c in (cobros_dist or []):
-        if c['monto_reserva'] > 0:
-            usos = db.get_reserva_usos_by_cobro(c['id'])
-            tot_usado = sum(u['monto'] for u in usos) if usos else 0
-            saldo_r = c['monto_reserva'] - tot_usado
-            if saldo_r > 0.01:
-                reservas.append([f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']}", c['fecha'], format_currency_ar(saldo_r)])
-                tot_r += saldo_r
+        saldo_r = c.get('saldo_reserva_disponible', 0.0)
+        if saldo_r > 0.01:
+            if c.get('origen_tipo') == 'convenio':
+                orig_label = f"Conv. {c['nro_decreto']} - {c['destino_fondos']}"
+            else:
+                orig_label = f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']}"
+            reservas.append([orig_label, c['fecha'], format_currency_ar(saldo_r)])
+            tot_r += saldo_r
                 
     if reservas:
         reservas.append(["TOTAL", "", format_currency_ar(tot_r)])
@@ -541,5 +542,6 @@ def generar_reporte_gastos_funcionamiento_financiados_obra_pdf(filepath, df_gast
     return filepath
 
 if __name__ == '__main__':
-    generar_reporte_pdf("test_report.pdf")
+    import os
+    generar_reporte_pdf(os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests", "test_report.pdf"))
     print("Reporte generado exitosamente.")

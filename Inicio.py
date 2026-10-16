@@ -475,21 +475,18 @@ if not df_cuotas.empty and not df_decretos.empty:
     st.write("**Dinero en Reserva Disponible:**")
     reservas = []
     for c in (cobros_dist or []):
-        if c['monto_reserva'] > 0:
-            usos = get_reserva_usos_by_cobro(c['id'])
-            tot_usado = sum(u['monto'] for u in usos) if usos else 0
-            saldo_r = c['monto_reserva'] - tot_usado
-            if saldo_r > 0.01:
-                o_imuh = c.get('expediente_imuh') or "Sin asignar"
-                if c.get('origen_tipo') == 'convenio':
-                    orig_label = f"Conv. {c['nro_decreto']} - {c['destino_fondos']} (IMUH: {o_imuh})"
-                else:
-                    orig_label = f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']} (IMUH: {o_imuh})"
-                reservas.append({
-                    "Origen (Decreto / Convenio)": orig_label,
-                    "Fecha Cobro": format_date_ar(c['fecha']),
-                    "Saldo Disponible": saldo_r
-                })
+        saldo_r = c.get('saldo_reserva_disponible', 0.0)
+        if saldo_r > 0.01:
+            o_imuh = c.get('expediente_imuh') or "Sin asignar"
+            if c.get('origen_tipo') == 'convenio':
+                orig_label = f"Conv. {c['nro_decreto']} - {c['destino_fondos']} (IMUH: {o_imuh})"
+            else:
+                orig_label = f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']} (IMUH: {o_imuh})"
+            reservas.append({
+                "Origen (Decreto / Convenio)": orig_label,
+                "Fecha Cobro": format_date_ar(c['fecha']),
+                "Saldo Disponible": saldo_r
+            })
                 
     if reservas:
         df_r = pd.DataFrame(reservas)

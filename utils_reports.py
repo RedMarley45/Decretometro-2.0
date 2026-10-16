@@ -1492,17 +1492,18 @@ def obtener_vista_estado_financiero():
     tot_r = 0
     cobros_dist = db.get_cobros_con_resumen_distribucion()
     for c in (cobros_dist or []):
-        if c['monto_reserva'] > 0:
-            usos = db.get_reserva_usos_by_cobro(c['id'])
-            tot_usado = sum(u['monto'] for u in usos) if usos else 0
-            saldo_r = c['monto_reserva'] - tot_usado
-            if saldo_r > 0.01:
-                reservas.append({
-                    "Decreto / Obra": f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']}",
-                    "Fecha Cobro": utils.format_date_ar(c['fecha']),
-                    "Saldo Reserva": saldo_r
-                })
-                tot_r += saldo_r
+        saldo_r = c.get('saldo_reserva_disponible', 0.0)
+        if saldo_r > 0.01:
+            if c.get('origen_tipo') == 'convenio':
+                orig_label = f"Conv. {c['nro_decreto']} - {c['destino_fondos']}"
+            else:
+                orig_label = f"Dto. {c['nro_decreto']}/{c['decreto_anio']} - {c['destino_fondos']}"
+            reservas.append({
+                "Decreto / Obra": orig_label,
+                "Fecha Cobro": utils.format_date_ar(c['fecha']),
+                "Saldo Reserva": saldo_r
+            })
+            tot_r += saldo_r
 
     return deudas, tot_d, reservas, tot_r
 

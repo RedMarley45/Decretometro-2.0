@@ -490,6 +490,7 @@ def render_tab2():
             
             if usos_fo:
                 for u in usos_fo:
+                    col_u1, col_u2 = st.columns([4, 1])
                     str_op = f" - OP: {u['nro_op']}" if u['nro_op'] else ""
                     str_notas = f" ({u['notas']})" if u['notas'] else ""
                     str_bimon = f" [Amortiza: {u['cantidad_moneda_amortizada']:,.2f} @ ${u['cotizacion_pago']:,.2f}]" if (u.get('cantidad_moneda_amortizada') and float(u.get('cotizacion_pago') or 1.0) > 1.0) else ""
@@ -503,6 +504,22 @@ def render_tab2():
                         st.rerun()
             else:
                 st.caption("No existen pagos a la obra original para este cobro.")
+                
+            if recuperos:
+                st.write("**Recuperos de Fondos Propios:**")
+                for r in recuperos:
+                    col_r1, col_r2 = st.columns([4, 1])
+                    str_op_r = f" - OP: {r['nro_op']}" if r.get('nro_op') else ""
+                    str_notas_r = f" ({r['notas']})" if r.get('notas') else ""
+                    obra_r = db.get_obra(r['obra_id']) if r.get('obra_id') else None
+                    str_ob_r = f" (Obra: {obra_r['nombre']})" if obra_r else ""
+                    col_r1.info(f"Recupero el {utils.format_date_ar(r['fecha'])}: **{utils.format_currency_ar(r['monto'])}**{str_ob_r}{str_op_r}{str_notas_r}")
+                    if col_r2.button("Borrar", key=f"del_rec_{r['id']}"):
+                        db.delete_recupero_fondos_propios(r['id'])
+                        nuevo_fo = val_fin - r['monto']
+                        db.upsert_distribucion(c_sel_id, nuevo_fo, val_res, val_not)
+                        st.session_state['success_msg_dist2'] = "Recupero de Fondos Propios eliminado correctamente."
+                        st.rerun()
                 
             st.write("") # Espaciado
             

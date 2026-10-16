@@ -657,10 +657,9 @@ def render_tab1():
                                 cobro_id = c_item['id']
                                 reserva_actual = c_item['monto_reserva']
                                 usos_r = db.get_reserva_usos_by_cobro(cobro_id)
-                                total_usado = sum(u['monto'] for u in usos_r)
-                                saldo_reserva = reserva_actual - total_usado
+                                saldo_reserva = db.get_saldo_reserva_cobro(cobro_id)
                             
-                                if reserva_actual > 0:
+                                if saldo_reserva > 0.01 or reserva_actual > 0 or usos_r:
                                     st.write("---")
                                     st.write(f"🔒 **Usar Reservas del Cobro {utils.format_date_ar(c_item['fecha'])} (Saldo disponible: {utils.format_currency_ar(saldo_reserva)}):**")
                                     if saldo_reserva > 0.01:

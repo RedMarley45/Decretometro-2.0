@@ -1440,7 +1440,32 @@ def get_cobros_con_resumen_distribucion():
                            JOIN cobro_reserva_usos cru ON crur.reserva_uso_id = cru.id
                            WHERE cru.cobro_id = c.id AND crur.destino_tipo = 'sin_distribucion'
                        ), 0)
-                   ) as total_distribuido
+                   ) as total_distribuido,
+                   COALESCE((SELECT SUM(monto) FROM cobro_reserva_usos WHERE cobro_id = c.id), 0) as total_reserva_usada,
+                   COALESCE((
+                       SELECT SUM(crur.monto) FROM cobro_reserva_usos_recuperos crur
+                       JOIN cobro_reserva_usos cru ON crur.reserva_uso_id = cru.id
+                       WHERE cru.cobro_id = c.id AND crur.destino_tipo = 'reserva'
+                   ), 0) as total_recuperos_reserva_a_reserva,
+                   COALESCE((
+                       SELECT SUM(cdr.monto) FROM cobro_desvios_recuperos cdr
+                       JOIN cobro_desvios cd ON cdr.desvio_id = cd.id
+                       WHERE cd.cobro_id = c.id AND cdr.destino_tipo = 'reserva'
+                   ), 0) as total_recuperos_desvios_a_reserva,
+                   MAX(0.0, ROUND(
+                       COALESCE(dist.monto_reserva, 0) -
+                       COALESCE((SELECT SUM(monto) FROM cobro_reserva_usos WHERE cobro_id = c.id), 0) +
+                       COALESCE((
+                           SELECT SUM(crur.monto) FROM cobro_reserva_usos_recuperos crur
+                           JOIN cobro_reserva_usos cru ON crur.reserva_uso_id = cru.id
+                           WHERE cru.cobro_id = c.id AND crur.destino_tipo = 'reserva'
+                       ), 0) +
+                       COALESCE((
+                           SELECT SUM(cdr.monto) FROM cobro_desvios_recuperos cdr
+                           JOIN cobro_desvios cd ON cdr.desvio_id = cd.id
+                           WHERE cd.cobro_id = c.id AND cdr.destino_tipo = 'reserva'
+                       ), 0), 2)
+                   ) as saldo_reserva_disponible
             FROM cobros c
             LEFT JOIN cuotas cu ON c.cuota_id = cu.id
             LEFT JOIN decretos d ON cu.decreto_id = d.id
@@ -1690,6 +1715,36 @@ def get_reserva_usos_by_cobro(cobro_id):
         cursor.execute('SELECT * FROM cobro_reserva_usos WHERE cobro_id = ? ORDER BY fecha ASC', (cobro_id,))
         rows = cursor.fetchall()
         return [dict(ix) for ix in rows]
+
+
+def get_saldo_reserva_cobro(cobro_id):
+    """Calcula el saldo neto disponible de reserva para un cobro individual:
+    Reserva inicial - Usos totales + Recuperos de préstamos a reserva + Recuperos de desvíos a reserva.
+    """
+    with db_session() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 
+                MAX(0.0, ROUND(
+                    COALESCE(dist.monto_reserva, 0) -
+                    COALESCE((SELECT SUM(monto) FROM cobro_reserva_usos WHERE cobro_id = c.id), 0) +
+                    COALESCE((
+                        SELECT SUM(crur.monto) FROM cobro_reserva_usos_recuperos crur
+                        JOIN cobro_reserva_usos cru ON crur.reserva_uso_id = cru.id
+                        WHERE cru.cobro_id = c.id AND crur.destino_tipo = 'reserva'
+                    ), 0) +
+                    COALESCE((
+                        SELECT SUM(cdr.monto) FROM cobro_desvios_recuperos cdr
+                        JOIN cobro_desvios cd ON cdr.desvio_id = cd.id
+                        WHERE cd.cobro_id = c.id AND cdr.destino_tipo = 'reserva'
+                    ), 0), 2)
+                ) as saldo_disponible
+            FROM cobros c
+            LEFT JOIN cobro_distribuciones dist ON c.id = dist.cobro_id
+            WHERE c.id = ?
+        ''', (cobro_id,))
+        row = cursor.fetchone()
+        return row['saldo_disponible'] if row else 0.0
 
 
 def get_reserva_usos_prestamos_activos():
